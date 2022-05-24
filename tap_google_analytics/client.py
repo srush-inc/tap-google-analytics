@@ -199,13 +199,12 @@ class GoogleAnalyticsStream(Stream):
                 consecutive pagination tokens are identical.
 
         """
-        next_page_token: Any = None
-        finished = False
-
         state_filter = self._get_state_filter(context)
         api_report_def = self._generate_report_definition(self.report)
         view_ids = self.view_id.split(",")
         for view_id in view_ids:
+            next_page_token: Any = None
+            finished = False
             while not finished:
                 resp = self._request_data(
                     view_id,
@@ -397,6 +396,10 @@ class GoogleAnalyticsStream(Stream):
         properties.append(
             th.Property("report_end_date", th.StringType(), required=True)
         )
+        properties.append(
+            th.Property("view_id", th.StringType(), required=True)
+        )
+        primary_keys.append("view_id")
 
         # If 'ga:date' has not been added as a Dimension, add the
         #  {start_date, end_date} params as keys
