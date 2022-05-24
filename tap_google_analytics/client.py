@@ -131,10 +131,10 @@ class GoogleAnalyticsStream(Stream):
         return report_definition
 
     def _request_data(
-        self, api_report_def, state_filter: str, next_page_token: Optional[Any]
+        self, view_id, api_report_def, state_filter: str, next_page_token: Optional[Any]
     ) -> dict:
         try:
-            return self._query_api(api_report_def, state_filter, next_page_token)
+            return self._query_api(view_id, api_report_def, state_filter, next_page_token)
         except HttpError as e:
             # Process API errors
             # Use list of errors defined in:
@@ -204,23 +204,26 @@ class GoogleAnalyticsStream(Stream):
 
         state_filter = self._get_state_filter(context)
         api_report_def = self._generate_report_definition(self.report)
-        while not finished:
-            resp = self._request_data(
-                api_report_def,
-                state_filter=state_filter,
-                next_page_token=next_page_token,
-            )
-            for row in self._parse_response(resp):
-                yield row
-            previous_token = copy.deepcopy(next_page_token)
-            next_page_token = self._get_next_page_token(response=resp)
-            if next_page_token and next_page_token == previous_token:
-                raise RuntimeError(
-                    f"Loop detected in pagination. "
-                    f"Pagination token {next_page_token} is identical to prior token."
+        view_ids = self.view_id.split(",")
+        for view_id in view_ids:
+            while not finished:
+                resp = self._request_data(
+                    view_id,
+                    api_report_def,
+                    state_filter=state_filter,
+                    next_page_token=next_page_token,
                 )
-            # Cycle until get_next_page_token() no longer returns a value
-            finished = not next_page_token
+                for row in self._parse_response(view_id, resp):
+                    yield row
+                previous_token = copy.deepcopy(next_page_token)
+                next_page_token = self._get_next_page_token(response=resp)
+                if next_page_token and next_page_token == previous_token:
+                    raise RuntimeError(
+                        f"Loop detected in pagination. "
+                        f"Pagination token {next_page_token} is identical to prior token."
+                    )
+                # Cycle until get_next_page_token() no longer returns a value
+                finished = not next_page_token
 
     def _get_next_page_token(self, response: dict) -> Any:
         """Return token identifying next page or None if all records have been read.
@@ -241,7 +244,7 @@ class GoogleAnalyticsStream(Stream):
         if report:
             return report[0].get("nextPageToken")
 
-    def _parse_response(self, response):
+    def _parse_response(self, view_id, response):
         report = response.get("reports", [])[0]
         if report:
             columnHeader = report.get("columnHeader", {})
@@ -286,13 +289,14 @@ class GoogleAnalyticsStream(Stream):
                 # Also add the [start_date,end_date) used for the report
                 record["report_start_date"] = self.config.get("start_date")
                 record["report_end_date"] = self.end_date
+                record["view_id"] = view_id
 
                 yield record
 
     @backoff.on_exception(
         backoff.expo, (HttpError, socket.timeout), max_tries=9, giveup=is_fatal_error
     )
-    def _query_api(self, report_definition, state_filter, pageToken=None) -> dict:
+    def _query_api(self, view_id, report_definition, state_filter, pageToken=None) -> dict:
         """Query the Analytics Reporting API V4.
 
         Returns
@@ -303,7 +307,7 @@ class GoogleAnalyticsStream(Stream):
         body = {
             "reportRequests": [
                 {
-                    "viewId": self.view_id,
+                    "viewId": view_id,
                     "dateRanges": [
                         {"startDate": state_filter, "endDate": self.end_date}
                     ],
