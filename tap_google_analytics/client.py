@@ -314,6 +314,7 @@ class GoogleAnalyticsStream(Stream):
                     "pageToken": pageToken,
                     "metrics": report_definition["metrics"],
                     "dimensions": report_definition["dimensions"],
+                    "samplingLevel":  "LARGE"
                 }
             ]
         }
